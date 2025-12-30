@@ -1,19 +1,17 @@
 from datetime import datetime, timedelta
-from airflow.decorators import dag, task
-from airflow.models.param import Param
+from airflow.sdk import dag, task,Param
+#from airflow.models.param import Param
 # --- Import your custom functions ---
 # Ensure these modules are in your PYTHONPATH or Airflow plugins folder
-from fetch_url_mitma import fetch_mitma_url
-from ingestion_mitma_partioning import ingestion_bronze_mitma_partitioned
-from data_quality_clean_checks import run_data_quality_fixes
-from transform_silver_mitma import run_silver_ingestion_atomic
-from data_quality_updates import run_stats_update
-
+from mitma.fetch_url_mitma import fetch_mitma_url
+from mitma.ingestion_mitma_partioning import ingestion_bronze_mitma_partitioned
+from mitma.data_quality_clean_checks import run_data_quality_fixes
+from mitma.transform_silver import run_silver_ingestion_atomic
+from mitma.data_quality_updates import run_stats_update
 # --- Default Arguments ---
 default_args = {
     'owner': 'airflow',
     'start_date': datetime(2023, 1, 1),
-    'end_date': datetime(2023, 1, 1),
     'retries': 1
 }
 
@@ -23,7 +21,6 @@ default_args = {
     default_args=default_args,
     description='Pipeline for MITMA Mobility: Fetch -> Bronze -> Quality -> Silver -> Stats',
     start_date=datetime(2023, 1, 1), # Adjust start date
-    #schedule_interval='@daily',      # Runs once a day
     catchup=False,                   # Set True if you want to backfill past dates
     tags=['mitma', 'mobility'],
     params={
@@ -98,10 +95,12 @@ def mitma_pipeline():
     
     # Pass URLs to Ingestion
     ingestion = task_ingest_bronze(url_list)
+
     dq_task = task_dq_checks(url_list)
     # Define the rest of the sequence
     ingestion >> dq_task
     dq_task >> task_silver_transform() >> task_update_stats()
+    
 
 # Instantiate the DAG
 dag_instance = mitma_pipeline()

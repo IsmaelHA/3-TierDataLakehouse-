@@ -1,6 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 import requests
+import re
 def check_url_exists(url):
     try:
         response = requests.head(url, timeout=5)

@@ -1,5 +1,6 @@
 import duckdb
-
+import re
+import datetime
 DUCKLAKE_PATH = "ducklake:/usr/local/airflow/include/my_ducklake.ducklake"
 DUCKLAKE_FILE = "/usr/local/airflow/include/my_ducklake.ducklake"
 
@@ -26,3 +27,8 @@ def table_exists(con, table_name: str) -> bool:
     """).fetchone()[0]
     return result > 0
 
+def extract_date_from_url(url):
+    match = re.search(r'/(\d{8})_Viajes_distritos', url)
+    if match:
+        return datetime.datetime.strptime(match.group(1), '%Y%m%d').date()
+    return None

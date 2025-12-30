@@ -2,7 +2,7 @@ import sys
 import os
 import shutil
 import uuid
-from ducklake_utils import connect_ducklake, close_ducklake
+from mitma.ducklake_utils import connect_ducklake, close_ducklake, extract_date_from_url
 
 def create_bronze_view(con, base_path):
     """
@@ -14,7 +14,7 @@ def create_bronze_view(con, base_path):
         SELECT * FROM parquet_scan('{base_path}/**/*.parquet', HIVE_PARTITIONING=1);
     """)
 
-def ingestion_bronze_mitma_partitioned(valid_urls: list, base_path="data/bronze_mobility"):
+def ingestion_bronze_mitma_partitioned(valid_urls: list, base_path="data/bronze_mobility", update=False):
     con = None
     try:    
         con = connect_ducklake()
@@ -25,8 +25,33 @@ def ingestion_bronze_mitma_partitioned(valid_urls: list, base_path="data/bronze_
         batch_size = 15
         
         for i, batch_start in enumerate(range(0, len(valid_urls), batch_size)):
-            batch_urls = valid_urls[batch_start:batch_start + batch_size]
-            
+            raw_batch_urls = valid_urls[batch_start:batch_start + batch_size]
+            batch_urls=[]
+            if update:
+                # If update is True, we process everything (Overwrite mode)
+                batch_urls = raw_batch_urls
+            else:
+                # If update is False, we check if the folder exists first
+                for url in raw_batch_urls:
+                    date_obj = extract_date_from_url(url)
+                    
+                    # Construct the theoretical partition path: data/bronze/date=20230101
+                    # Note: We assume standard Hive naming 'date=YYYYMMDD'
+                    if date_obj:
+                        date_str = date_obj.strftime('%Y%m%d')
+                        partition_check_path = os.path.join(base_path, f"date={date_str}")
+                        
+                        if os.path.exists(partition_check_path):
+                            print(f"⏭️  Skipping {date_str}: Data exists and update=False")
+                            continue 
+                    
+                    # If we are here, either it doesn't exist, or we couldn't parse the date
+                    # (in which case we process it to be safe)
+                    batch_urls.append(url)
+
+            if not batch_urls:
+                print(f"Batch {i+1}: All files skipped (already exist).")
+                continue
             # Create a unique temp folder for THIS batch
             # e.g. data/bronze_mobility/_tmp_batch_0_a1b2c3d4
             batch_id = str(uuid.uuid4())[:8]
@@ -42,7 +67,7 @@ def ingestion_bronze_mitma_partitioned(valid_urls: list, base_path="data/bronze_
                 COPY (
                     SELECT 
                         fecha AS date,
-                        periodo AS time_period,
+                        periodo AS hour_period,
                         origen AS origin_zone,
                         destino AS destination_zone,
                         distancia AS distance_range,
@@ -95,7 +120,8 @@ def ingestion_bronze_mitma_partitioned(valid_urls: list, base_path="data/bronze_
         # 6. UPDATE VIEW (Final Step)
         # Now that all files are in place, we make sure the View sees them.
         create_bronze_view(con, base_path)
-        
+        total_count = con.execute(f"SELECT COUNT(*) FROM bronze_raw_mobility_trips;").fetchone()[0]
+        print(f"Total rows in bronze_raw_mobility_trips: {total_count}")
         print("MITMA Bronze ingestion completed successfully.")
         
     except Exception as e:

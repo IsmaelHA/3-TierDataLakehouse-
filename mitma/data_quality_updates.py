@@ -1,4 +1,4 @@
-from ducklake_utils import connect_ducklake, close_ducklake
+from mitma.ducklake_utils import connect_ducklake, close_ducklake
 
 def run_stats_update():
     
@@ -9,6 +9,11 @@ def run_stats_update():
         # 1. CHECK: Do we actually need to run?
         # We check if there is any date in Silver that is NOT in our "processed log"
         # This acts as our "Dirty Flag"
+        con.execute(f"""
+            CREATE TABLE IF NOT EXISTS silver_stats_log (
+                processed_date DATE,
+            );
+        """)
         new_data_exists = con.execute(f"""
             SELECT 1 
             FROM {silver_view} 
@@ -54,7 +59,8 @@ def run_stats_update():
             INSERT INTO silver_stats_log (processed_date)
             SELECT DISTINCT date FROM {silver_view};
         """)
-
+        temp_count = con.execute(f"SELECT COUNT(*) FROM silver_zone_stats;").fetchone()[0]
+        print(f" Rows in temp table silver_zone_stats: {temp_count}")
         con.execute("COMMIT;")
         print("✅ Stats table fully rebuilt and synchronized.")
 

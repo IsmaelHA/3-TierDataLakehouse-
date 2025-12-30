@@ -1,18 +1,18 @@
 import os
 import shutil
 import uuid
-from ducklake_utils import connect_ducklake, close_ducklake
+from mitma.ducklake_utils import connect_ducklake, close_ducklake
 
-def run_silver_ingestion_atomic(base_path="data/silver_mobility"):
-    con = None
+def run_silver_ingestion_atomic(con,base_path="data/silver_mobility",  batch_size=5):
+    #con = None
+    silver_view = "silver_mobility_trips"
+    source_table = "stg_mobility_clean_check"
     # Create a unique temp folder for this specific run
     # e.g., data/silver_mobility/_tmp_ingest_1234abcd
     batch_id = str(uuid.uuid4())[:8]
     temp_path = os.path.join(os.path.dirname(base_path), f"_tmp_ingest_{batch_id}")
-    silver_view="silver_mobility_trips"
     try:
-        con = connect_ducklake()
-        source_table = "stg_mobility_clean_check"
+        #con = connect_ducklake()
         
         # 1. Check if Source has data
         count = con.execute(f"SELECT count(*) FROM {source_table}").fetchone()[0]
@@ -68,6 +68,8 @@ def run_silver_ingestion_atomic(base_path="data/silver_mobility"):
         con.execute(f"""
             DROP TABLE IF EXISTS {source_table};
         """)
+        total_count = con.execute(f"SELECT COUNT(*) FROM {silver_view};").fetchone()[0]
+        print(f"Total rows in '{silver_view}': {total_count}")
         print("Success: Silver Layer updated safely.")
 
     except Exception as e:
@@ -81,5 +83,5 @@ def run_silver_ingestion_atomic(base_path="data/silver_mobility"):
             shutil.rmtree(temp_path)
             print("Temporary staging files cleaned up.")
             
-        if con:
-            close_ducklake(con)
+        #if con:
+            #close_ducklake(con)
