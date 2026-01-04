@@ -4,10 +4,11 @@ from airflow.sdk import dag, task,Param
 # --- Import your custom functions ---
 # Ensure these modules are in your PYTHONPATH or Airflow plugins folder
 from mitma.fetch_url_mitma import fetch_mitma_url
-from mitma.ingestion_mitma_partioning import ingestion_bronze_mitma_partitioned
-from mitma.data_quality_clean_checks import run_data_quality_fixes
-from mitma.transform_silver import run_silver_ingestion_atomic
-from mitma.data_quality_updates import run_stats_update
+from mitma.bronze_mitma import create_bronze_mitma_table,ingestion_bronze_mitma
+from mitma.silver_mitma import transform_mitma_silver,ingest_spain_holidays,create_silver_mitma_table
+from mitma.gold_mitma import transform_gold_mitma,create_gold_mitma_table
+from mitma.generate_report import generate_mobility_report_s3
+from ducklake_utils import connect_ducklake, close_ducklake, extract_date_from_url,DUCKLAKE_DATA_PATH
 # --- Default Arguments ---
 default_args = {
     'owner': 'airflow',
@@ -34,6 +35,7 @@ def mitma_pipeline():
     # We use the logical_date (execution date) as the target date
     @task
     def task_fetch_urls(**context):
+        con = connect_ducklake()
         # 1. Try to get manual parameters from the UI Trigger
         # "params" dictionary is automatically available in context
         manual_start = context['params'].get('start_date')
@@ -56,51 +58,104 @@ def mitma_pipeline():
         if not urls:
             print(f"No URLs found between {s_date} and {e_date}.")
             return []
-            
+        close_ducklake(con)
         return urls
 
+    @task
+    def task_create_bronze_mitma(): 
+        con = connect_ducklake()
+        create_bronze_mitma_table(con)
+        close_ducklake(con)
+        return True
+        
     # 2. TASK: Ingest to Bronze
     # This task receives the list of URLs from the previous task via XComs automatically
     @task
-    def task_ingest_bronze(valid_urls: list):
-        if not valid_urls:
-            print("Skipping ingestion: No URLs provided.")
+    def task_ingest_bronze(url: str):
+        con = connect_ducklake()
+        if not url:
+            print("Skipping ingestion: No URL provided.")
             return
         
-        print(f"Ingesting {len(valid_urls)} files into Bronze...")
-        ingestion_bronze_mitma_partitioned(valid_urls)
+        ingestion_bronze_mitma(con,url)
+        close_ducklake(con)
+        return url
 
-    # 3. TASK: Data Quality Checks (Bronze Layer)
+
     @task
-    def task_dq_checks(valid_urls):
-        print("Running Data Quality Fixes/Checks...")
-        run_data_quality_fixes(valid_urls)
+    def task_create_holidays(urls):
+        con = connect_ducklake()
+        valid_dates_list = set(extract_date_from_url(url) for url in urls)
+        valid_dates_list.discard(None)
+        if not valid_dates_list:
+            print("No valid dates found.")
+            return
+        #sql_date_str = ", ".join([f"'{d.strftime('%Y-%m-%d')}'" for d in valid_dates_list])
+        # Change '%Y-%m-%d' to '%Y%m%d'
+        #ducklake_date_str = ", ".join([f"'{d.strftime('%Y%m%d')}'" for d in valid_dates_list])
+        unique_years = {d.year for d in valid_dates_list} # This is a set, so, years are unique
+        for year in sorted(unique_years):
+            print(f"Ingesting holidays for {year}")
+            ingest_spain_holidays(con,year)
+        
+        close_ducklake(con)
+        return True
+
+    @task
+    def task_create_silver_table():
+        con = connect_ducklake()
+        create_silver_mitma_table(con)
+        close_ducklake(con)
 
     # 4. TASK: Silver Transformation
     @task
-    def task_silver_transform():
+    def task_silver_transform(url):
+        con = connect_ducklake()
         print("Running Silver Ingestion (Atomic Swap)...")
-        run_silver_ingestion_atomic()
-
+        transform_mitma_silver(con,url)
+        close_ducklake(con)
     # 5. TASK: Update Statistics
+    """
     @task
-    def task_update_stats():
+    def task_create_gold():
         print("Updating Data Quality Stats...")
         run_stats_update()
+    """
+    @task
+    def task_transform_gold():
+        con = connect_ducklake()
+        print("Updating Data Quality Stats...")
+        transform_gold_mitma(con)
+        close_ducklake(con)
 
+    # In your DAG
+    @task
+    def task_create_report():
+        con = connect_ducklake()
+        try:
+            # Generate and Upload
+            generate_mobility_report_s3(
+                con=con, 
+                bucket_name=DUCKLAKE_DATA_PATH, 
+                s3_key="reports/mitma_mobility.pdf"
+            )
+        finally:
+            close_ducklake(con)
     # --- Define the Flow / Dependencies ---
     
-    # Get the URLs
-    url_list = task_fetch_urls()
-    
-    # Pass URLs to Ingestion
-    ingestion = task_ingest_bronze(url_list)
 
-    dq_task = task_dq_checks(url_list)
-    # Define the rest of the sequence
-    ingestion >> dq_task
-    dq_task >> task_silver_transform() >> task_update_stats()
-    
+
+    # MAIN PIPELINE
+    url_list = task_fetch_urls()
+    task_create_holidays(url_list)
+
+    ingested_results = task_ingest_bronze.expand(url=url_list)
+    task_create_bronze_mitma() >> ingested_results
+
+    silver_results = task_silver_transform.expand(url=ingested_results)
+    task_create_silver_table() >> silver_results
+    silver_results >> task_transform_gold()#>>task_create_report()
+
 
 # Instantiate the DAG
 dag_instance = mitma_pipeline()
