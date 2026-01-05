@@ -1,0 +1,61 @@
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from airflow.models.param import Param
+from datetime import datetime
+
+from fetch_url_population import download_population_csv
+from ingestion_bronze_population import ingestion_bronze_population
+from transform_silver_population import transform_silver_population
+
+default_args = {
+    "owner": "airflow",
+    "start_date": datetime(2024, 1, 1),
+    "retries": 1
+}
+
+with DAG(
+    dag_id="population_pipeline",
+    default_args=default_args,
+    schedule=None,
+    catchup=False,
+    max_active_tasks=1,
+    params={
+        "year": Param(
+            default=2023,
+            type="integer",
+            minimum=2011,
+            maximum=2030,
+            description="Year to process"
+        ),
+    }
+) as dag:
+
+    def fetch_task(**context):
+        year = context["params"]["year"]
+        return download_population_csv(year)
+
+    def bronze_task(**context):
+        year = context["params"]["year"]
+        file_path = context["ti"].xcom_pull(task_ids="fetch")
+        return ingestion_bronze_population(file_path, year)
+
+    def silver_task(**context):
+        year = context["params"]["year"]
+        return transform_silver_population(year)
+
+    fetch = PythonOperator(
+        task_id="fetch",
+        python_callable=fetch_task
+    )
+
+    bronze = PythonOperator(
+        task_id="bronze",
+        python_callable=bronze_task
+    )
+
+    silver = PythonOperator(
+        task_id="silver",
+        python_callable=silver_task
+    )
+
+    fetch >> bronze >> silver

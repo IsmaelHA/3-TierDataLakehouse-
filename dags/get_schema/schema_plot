@@ -1,0 +1,15 @@
+// MITMA Schema
+digraph {
+	rankdir=LR
+	node [fillcolor="#f0f0f0" shape=record style=filled]
+	bronze_calendar_dates [label="{ bronze_calendar_dates | date (DATE) \l day_of_week (INT) \l is_holiday (BOOL) \l }"]
+	silver_stats_log [label="{ silver_stats_log | processed_date (DATE) \l }"]
+	silver_zone_stats [label="{ silver_zone_stats | day_type (INT) \l hour_period (INT) \l origin_zone (VARCHAR) \l destination_zone (VARCHAR) \l mean_trips (DOUBLE) \l }"]
+	stg_mobility_clean_check [label="{ stg_mobility_clean_check | date (DATE) \l hour_period (INT) \l origin_zone (VARCHAR) \l destination_zone (VARCHAR) \l trips (DOUBLE) \l }"]
+	silver_population [label="{ silver_population | municipality_code (VARCHAR) \l year (INT) \l population (BIGINT) \l }"]
+	bronze_economy_2022 [label="{ bronze_economy_2022 | Municipios \l Distritos \l Secciones \l Renta_Media \l Total \l }"]
+	silver_economy_aggregated [label="{ silver_economy_aggregated | municipality_code \l district_code \l section_code \l year (INT) \l avg_income (DOUBLE) \l }"]
+	silver_geometry_wgs84 [label="{ silver_geometry_wgs84 | geometry (GEOM) \l census_section_id \l district_id \l municipality_id \l year (INT) \l }"]
+	bronze_geometry_2023 [label="{ bronze_geometry_2023 | geom (GEOM) \l CUSEC \l CUDIS \l CUMUN \l CPRO \l CCA \l }"]
+	ref_holidays [label="{ ref_holidays | date (DATE) \l is_holiday (BOOL) \l }"]
+}

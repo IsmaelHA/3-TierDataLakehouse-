@@ -1,0 +1,4 @@
+project:
+    name: astro
+volumes:
+  - ./data:/usr/local/airflow/data

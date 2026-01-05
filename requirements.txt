@@ -1,0 +1,11 @@
+# Astro Runtime includes the following pre-installed providers packages: https://www.astronomer.io/docs/astro/runtime-image-architecture#provider-packages
+duckdb
+holidays
+geopandas
+pandas
+numpy
+scikit-learn
+matplotlib
+reportlab
+boto3
+apache-airflow-providers-postgres
