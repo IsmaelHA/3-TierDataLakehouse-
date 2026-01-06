@@ -3,9 +3,9 @@ from airflow.operators.python import PythonOperator
 from airflow.models.param import Param
 from datetime import datetime
 
-from fetch_url_economy import download_economy_csv
-from ingestion_bronze_economy import ingestion_bronze_economy
-from transform_silver_economy import transform_silver_economy
+from Economy.fetch_url_economy import download_economy_csv
+from Economy.ingestion_bronze_economy import ingestion_bronze_economy
+from Economy.transform_silver_economy import transform_silver_economy
 
 default_args = {
     "owner": "airflow",

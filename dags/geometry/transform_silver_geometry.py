@@ -1,5 +1,5 @@
 def transform_silver_geometry(year: int):
-    from geometry.geometry.ducklake_utils import connect_ducklake, close_ducklake
+    from ducklake_utils import connect_ducklake, close_ducklake
     con = None
     try:
         con = connect_ducklake()

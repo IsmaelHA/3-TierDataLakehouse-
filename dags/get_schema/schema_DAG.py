@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 import duckdb
 from get_schema.get_shema import get_schema_task
-from get_schema.ducklake_utils import connect_ducklake, close_ducklake
+from ducklake_utils import connect_ducklake, close_ducklake
 
 # --- Use your preferred imports ---
 # Note: If airflow.sdk is not available in your environment, 
@@ -31,33 +31,36 @@ def duckdb_schema_pipeline():
     def task_get_schema_ddl(**context):
 
         # 2. Connect to DuckDB
-        # We use read_only=True to prevent accidental writes during inspection
         try:
-            con = connect_ducklake
+            con = connect_ducklake()
+            # 3. Run the specific query you asked for
+            # This retrieves the 'CREATE TABLE' statements
+            query = "SELECT sql FROM sqlite_master WHERE type = 'table';"
+            results = con.execute(query).fetchall()
+
+            # 4. Print the output to the Airflow Task Logs
+            print(f"--- Found {len(results)} tables. Schema Definitions below: ---")
+            
+            schema_statements = []
+            for i, row in enumerate(results):
+                ddl = row[0]
+                # Print clearly to logs
+                print(f"\n[Table {i+1}]:\n{ddl}")
+                schema_statements.append(ddl)
+                
+            close_ducklake(con)
+            
+            # Return the list of DDL strings (viewable in XComs)
+            return schema_statements
         except Exception as e:
             # Fallback if the file doesn't exist or permissions fail
             print(f"Error connecting: {e}. Falling back to in-memory for demo.")
-            close_ducklake(con)
-
-        # 3. Run the specific query you asked for
-        # This retrieves the 'CREATE TABLE' statements
-        query = "SELECT sql FROM sqlite_master WHERE type = 'table';"
-        results = con.execute(query).fetchall()
-
-        # 4. Print the output to the Airflow Task Logs
-        print(f"--- Found {len(results)} tables. Schema Definitions below: ---")
-        
-        schema_statements = []
-        for i, row in enumerate(results):
-            ddl = row[0]
-            # Print clearly to logs
-            print(f"\n[Table {i+1}]:\n{ddl}")
-            schema_statements.append(ddl)
             
-        close_ducklake(con)
+        finally:
+            if con:
+                close_ducklake(con)
+
         
-        # Return the list of DDL strings (viewable in XComs)
-        return schema_statements
 
     # Call the task
     task_get_schema_ddl()

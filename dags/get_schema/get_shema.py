@@ -1,9 +1,10 @@
 import duckdb
-from get_schema.ducklake_utils import connect_ducklake, close_ducklake
+from ducklake_utils import connect_ducklake, close_ducklake
 def get_schema_task():
     """
     Task: Retrieve schema DDL from DuckDB
     """
+    con=None
     try:
             
         con = connect_ducklake()
@@ -17,6 +18,7 @@ def get_schema_task():
         for row in results:
             print(row[0]) # Print the CREATE TABLE statement
     finally:
-        close_ducklake(con)
+        if con:
+            close_ducklake(con)
 # Run the 'DAG'
 get_schema_task()

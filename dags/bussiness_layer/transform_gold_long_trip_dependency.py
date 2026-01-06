@@ -28,7 +28,7 @@ def transform_gold_long_trip_dependency():
                 t.destination_zone_id,
                 t.total_trips,
                 EXTRACT(year FROM t.trip_timestamp) AS year,
-                ST_Distance(g1.centroid, g2.centroid) / 1000.0 AS distance_km
+                ST_Distance_Spheroid(g1.centroid, g2.centroid) / 1000.0 AS distance_km
               FROM trips t
               JOIN geo g1 ON CAST(t.origin_zone_id AS VARCHAR) = CAST(g1.zone_id AS VARCHAR)
               JOIN geo g2 ON CAST(t.destination_zone_id AS VARCHAR) = CAST(g2.zone_id AS VARCHAR)

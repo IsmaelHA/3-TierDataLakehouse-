@@ -9,8 +9,8 @@ from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
-from geometry.geometry.ducklake_utils import connect_ducklake, close_ducklake
-from section_extraction.section_extraction.extract_sections_from_polygon import create_gold_geometry_table
+from ducklake_utils import connect_ducklake, close_ducklake
+from section_extraction.extract_sections_from_polygon import create_gold_geometry_table
 
 
 default_args = {

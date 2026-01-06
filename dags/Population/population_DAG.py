@@ -3,9 +3,9 @@ from airflow.operators.python import PythonOperator
 from airflow.models.param import Param
 from datetime import datetime
 
-from fetch_url_population import download_population_csv
-from ingestion_bronze_population import ingestion_bronze_population
-from transform_silver_population import transform_silver_population
+from Population.fetch_url_population import download_population_csv
+from Population.ingestion_bronze_population import ingestion_bronze_population
+from Population.transform_silver_population import transform_silver_population
 
 default_args = {
     "owner": "airflow",
