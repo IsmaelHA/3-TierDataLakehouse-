@@ -48,7 +48,7 @@ default_args = {
 }
 
 # Configuración S3
-S3_BUCKET = "bigdataengineeringamc-ducklake"
+S3_BUCKET = "transportationproject"
 
 
 with DAG(
@@ -80,7 +80,7 @@ with DAG(
             description="Año para datos de población y economía"
         ),
         "target_origins": Param(
-            default=["46250"],
+            default=["4600501","4600502","4600503"],
             type="array",
             description="Lista de zonas origen para el reporte (ej: códigos de municipio)"
         ),
@@ -93,7 +93,7 @@ with DAG(
     with TaskGroup("bq1_typical_patterns", tooltip="Business Question 1: Typical Day Patterns") as bq1_group:
         
         def _generate_report(**context):
-            target_origins = context['params'].get('target_origins', ["46250"])
+            target_origins = context['params'].get('target_origins', ["4600501","4600502","4600503"])
             con = None
             try:
                 con = connect_ducklake()
@@ -101,7 +101,7 @@ with DAG(
                     con=con,
                     target_origins=target_origins,
                     bucket_name=S3_BUCKET,
-                    s3_key="reports/mobility_report.pdf"
+                    s3_key="ducklake/reports/day_profiles.pdf"
                 )
             finally:
                 if con:
