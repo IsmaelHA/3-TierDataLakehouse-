@@ -10,6 +10,24 @@ DUCKLAKE_ATTACH_NAME = "mobility_ducklake"
 BRONZE_MITMA_TABLE='bronze_mobility_trips'
 SILVER_MITMA_TABLE='silver_mobility_trips'
 GOLD_MITMA_TABLE='gold_typical_day_patterns'
+def optimize_for_large_aggregations(con):
+
+    print("🚀 Aplicando optimizaciones adicionales para agregaciones masivas...")
+    
+    # Aumentar tamaño de bloques para mejor I/O
+    con.execute("SET default_block_size=262144;")  # 256KB
+    
+    # Optimizar ordenamiento para GROUP BY
+    con.execute("SET default_order='DESC';")
+    
+    # Habilitar optimizaciones de hash para joins grandes
+    #con.execute("SET enable_optimizer=true;")
+    #con.execute("SET enable_external_access=true;")
+    
+    # Para agregaciones muy grandes, permitir uso de disco
+    con.execute("SET max_temp_directory_size='512GB';")
+    
+    print("✅ Optimizaciones aplicadas para procesamiento masivo")
 def connect_ducklake():
     """
     Conecta a DuckLake usando PostgreSQL (Neon) como catálogo de metadatos
@@ -31,7 +49,43 @@ def connect_ducklake():
     con.execute("LOAD aws;")
     con.execute("INSTALL httpfs;")
     con.execute("LOAD httpfs;")
+    num_threads = os.cpu_count() or 8
     
+    print(f"🔧 Configurando DuckDB para máximo rendimiento S3...")
+    print(f"   - CPUs detectadas: {num_threads}")
+    
+    # Configurar threads para paralelismo máximo
+    con.execute(f"SET threads={num_threads};")
+    
+    # Aumentar memoria disponible (ajusta según tu instancia EC2)
+    # Para EC2 con 16GB RAM, usa '12GB'. Para 32GB usa '24GB', etc.
+    con.execute("SET memory_limit='100GB';")
+    
+    # Configurar directorio temporal (usa disco rápido si está disponible)
+    con.execute("SET temp_directory='/tmp/duckdb_temp';")
+    
+    # Optimizaciones de rendimiento
+    con.execute("SET preserve_insertion_order=false;")  # Más rápido para agregaciones
+    optimize_for_large_aggregations(con=con)
+    # ============================================
+    # 3. CONFIGURACIÓN S3 OPTIMIZADA
+    # ============================================
+    
+    # Configurar región S3 (CRÍTICO para rendimiento)
+    con.execute(f"SET s3_region='{REGION}';")
+    
+    # Aumentar timeouts para archivos grandes
+    con.execute("SET http_timeout=30000000;")  # 5 minutos
+    
+    # Más reintentos para mayor estabilidad
+    con.execute("SET http_retries=3;")
+    
+    # Mantener conexiones vivas
+    con.execute("SET http_keep_alive=true;")
+    
+    # Configurar URLs de S3
+    con.execute(f"SET s3_url_style='path';")
+    con.execute(f"SET s3_endpoint='s3.{REGION}.amazonaws.com';")
     # Obtener credenciales de Airflow
     pg_conn = BaseHook.get_connection('neon_postgres')
     

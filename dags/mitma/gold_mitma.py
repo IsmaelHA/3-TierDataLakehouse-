@@ -26,7 +26,7 @@ def transform_gold_mitma(con):
     Recomputes the 'Typical Day' patterns based on all data available in Silver.
     This creates a full statistical model of mobility.
     """
-    print("🥇 Starting Gold Aggregation (Typical Patterns)...")
+    print(" Starting Gold Aggregation (Typical Patterns)...")
 
     # We use CREATE OR REPLACE to fully refresh the stats.
     # Since we are calculating Global Averages/StdDev, a full refresh is 

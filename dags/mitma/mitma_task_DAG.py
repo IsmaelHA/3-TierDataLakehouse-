@@ -6,7 +6,7 @@ from airflow.sdk import dag, task,Param
 from mitma.fetch_url_mitma import fetch_mitma_url
 from mitma.bronze_mitma import create_bronze_mitma_table,ingestion_bronze_mitma
 from mitma.silver_mitma import transform_mitma_silver,ingest_spain_holidays,create_silver_mitma_table
-from mitma.gold_mitma import transform_gold_mitma,create_gold_mitma_table
+from mitma.new_gold import transform_gold_mitma,create_gold_mitma_table
 from mitma.generate_report import generate_mobility_report_s3
 from ducklake_utils import connect_ducklake, close_ducklake, extract_date_from_url,DUCKLAKE_DATA_PATH
 # --- Default Arguments ---
