@@ -1,5 +1,6 @@
 import io
-import boto3
+import os
+from pathlib import Path
 import matplotlib.pyplot as plt
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
@@ -38,53 +39,113 @@ def create_mobility_plot(x_data, y_data, title, y_label, color='#007acc'):
     
     return buf
 
-def generate_mobility_report_s3(con, target_origins: list, bucket_name: str, s3_key: str = "reports/mobility_report.pdf"):
-    print(f"📊 Generating Aggregated Report for Origins: {target_origins}")
 
-    # 1. Prepare SQL with Dynamic List of Origins
+def _resolve_output_dir(output_dir: str) -> Path:
+    """Resolve the output directory.
+
+    If output_dir is relative, it is resolved under AIRFLOW_HOME when available.
+    Always creates the directory.
+    """
+    p = Path(output_dir)
+    if not p.is_absolute():
+        airflow_home = Path(os.environ.get("AIRFLOW_HOME", "."))
+        p = airflow_home / p
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _escape_ident_for_pragma(name: str) -> str:
+    # PRAGMA table_info('<name>') uses a string literal, so we just escape single quotes.
+    return (name or "").replace("'", "''")
+
+
+def _table_has_column(con, table_name: str, column_name: str) -> bool:
+    """Return True if `table_name` has `column_name`.
+
+    Works for DuckDB/DuckLake connections.
+    """
+    try:
+        t = _escape_ident_for_pragma(table_name)
+        df_cols = con.execute(f"PRAGMA table_info('{t}')").fetch_df()
+        if df_cols is None or df_cols.empty:
+            return False
+        return column_name in df_cols["name"].tolist()
+    except Exception:
+        return False
+
+
+def generate_mobility_report_local(
+    con,
+    target_origins: list,
+    output_dir: str = "include/outputs",
+    pdf_filename: str = "mobility_report.pdf",
+):
+    """Generate the mobility report and save it locally.
+
+    Outputs:
+      - PDF report (pdf_filename)
+      - CSV with the aggregated data (same name, .csv)
+
+    Files are written under `output_dir` (default: include/outputs). If `output_dir`
+    is a relative path, it is resolved under AIRFLOW_HOME when available.
+    """
+
+    # IMPORTANT CHANGE:
+    # `target_origins` is now interpreted as a list of DISTRICTS (district_id),
+    # and the filter is applied via JOIN with gold_geometry_wgs84:
+    #   g.origin_zone (census_section_id) -> geo.census_section_id -> geo.district_id IN (...)
+
+    if not target_origins:
+        print("⚠️ Empty district list. Report skipped.")
+        return
+
+    print(f"📊 Generating Aggregated Report for Districts: {target_origins}")
+
+    # 1. Prepare SQL with Dynamic List of District IDs
     placeholders = ', '.join(['?'] * len(target_origins))
     
+    has_year_g = _table_has_column(con, GOLD_MITMA_TABLE, "year")
+    has_year_geo = _table_has_column(con, "gold_geometry_wgs84", "year")
+    year_join = " AND geo.year = g.year" if (has_year_g and has_year_geo) else ""
+
     query = f"""
-        SELECT 
-            day_type, 
-            hour_period,
-            SUM(total_trips) as total_trips,
-            AVG(total_trips) as avg_trips,
-            STDDEV_SAMP(total_trips) as std_trips,
-            AVG(num_days_observed) as num_days_observed
-        FROM {GOLD_MITMA_TABLE}
-        WHERE origin_zone IN ({placeholders})
-        GROUP BY day_type, hour_period
-        ORDER BY day_type, hour_period
+        SELECT
+            g.day_type,
+            g.hour_period,
+            SUM(g.total_trips) AS total_trips,
+            AVG(g.total_trips) AS avg_trips,
+            STDDEV_SAMP(g.total_trips) AS std_trips,
+            AVG(g.num_days_observed) AS num_days_observed
+        FROM {GOLD_MITMA_TABLE} g
+        JOIN gold_geometry_wgs84 geo
+          ON (
+              geo.census_section_id = g.origin_zone
+              OR geo.district_id = g.origin_zone
+          )
+         {year_join}
+        WHERE geo.district_id IN ({placeholders})
+        GROUP BY g.day_type, g.hour_period
+        ORDER BY g.day_type, g.hour_period
     """
     
     df = con.execute(query, target_origins).fetch_df()
     
     if df.empty:
-        print("⚠️ No data found for these origins. Report skipped.")
+        print("⚠️ No data found for these districts. Report skipped.")
         return
 
-    s3_client = boto3.client('s3')
+    out_dir = _resolve_output_dir(output_dir)
+    pdf_path = out_dir / pdf_filename
+    csv_path = pdf_path.with_suffix(".csv")
 
-    # --- NEW STEP: Upload CSV Data ---
+    # --- Save CSV Data Locally ---
     try:
-        # Create CSV filename based on the PDF key (e.g., reports/report.pdf -> reports/report.csv)
-        csv_s3_key = s3_key.replace(".pdf", ".csv")
-        
-        # Create in-memory buffer for CSV
-        csv_buffer = io.StringIO()
-        df.to_csv(csv_buffer, index=False)
-        
-        # Convert string buffer to bytes buffer for upload_fileobj
-        csv_bytes_buffer = io.BytesIO(csv_buffer.getvalue().encode('utf-8'))
-        
-        print(f"💾 Uploading CSV data to s3://{bucket_name}/{csv_s3_key}...")
-        s3_client.upload_fileobj(csv_bytes_buffer, bucket_name, csv_s3_key)
-        print("✅ CSV Upload successful.")
-        
+        print(f"💾 Saving CSV data to: {csv_path}")
+        df.to_csv(csv_path, index=False)
+        print("✅ CSV saved.")
     except Exception as e:
-        print(f"❌ Failed to upload CSV: {e}")
-        # We don't raise here because we still want to try generating the PDF
+        print(f"❌ Failed to save CSV: {e}")
+        # Don't raise: still try to generate the PDF
 
 
     # 2. Setup PDF Buffer
@@ -99,7 +160,7 @@ def generate_mobility_report_s3(con, target_origins: list, bucket_name: str, s3_
     
     c.setFont("Helvetica", 12)
     c.setFillColor(colors.darkgray)
-    c.drawString(50, height - 105, f"Aggregated Report for Origin Zones: {', '.join(map(str, target_origins))}")
+    c.drawString(50, height - 105, f"Aggregated Report for District IDs: {', '.join(map(str, target_origins))}")
     c.setFillColor(colors.black)
     
     y_position = height - 160
@@ -159,14 +220,17 @@ def generate_mobility_report_s3(con, target_origins: list, bucket_name: str, s3_
         
         y_position -= 500 
 
-    # 4. Finalize & Upload PDF
+    # 4. Finalize & Save PDF
     c.save()
     pdf_buffer.seek(0)
 
     try:
-        print(f"💾 Uploading PDF report to s3://{bucket_name}/{s3_key}...")
-        s3_client.upload_fileobj(pdf_buffer, bucket_name, s3_key)
-        print("✅ PDF Upload successful.")
+        print(f"💾 Saving PDF report to: {pdf_path}")
+        with open(pdf_path, "wb") as f:
+            f.write(pdf_buffer.read())
+        print("✅ PDF saved.")
     except Exception as e:
-        print(f"❌ Failed to upload PDF to S3: {e}")
-        raise e
+        print(f"❌ Failed to save PDF: {e}")
+        raise
+
+    return {"pdf_path": str(pdf_path), "csv_path": str(csv_path)}

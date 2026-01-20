@@ -9,8 +9,9 @@ def get_schema_task():
             
         con = connect_ducklake()
         
+	
         # The Query
-        query = "SELECT sql FROM sqlite_master WHERE type = 'table';"
+        query = "COPY (     SELECT table_name, column_name, data_type     FROM duckdb_columns() ) TO 'database_structure.csv' (HEADER, DELIMITER ',');"
         
         results = con.execute(query).fetchall()
         
